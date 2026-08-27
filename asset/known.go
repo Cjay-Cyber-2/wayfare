@@ -28,8 +28,11 @@ import (
 //     Note the entry sets anchor_asset="KESC", naming its own token rather
 //     than the ISO-4217 code KES that SEP-1 intends. Read as KES.
 //
-//   - USDC   VERIFIED against circle.com's stellar.toml on 2026-08-08.
-//     See VerifyAgainstTOML in package anchor.
+//   - USDC   NOT YET VERIFIED against circle.com's stellar.toml. This is the
+//     widely-published Circle issuer and Horizon accepted it for live
+//     orderbook and path queries, which proves it is a real, actively traded
+//     issuer — but not that it is Circle's. Confirm before any mainnet
+//     execution path ships. See VerifyAgainstTOML in package anchor.
 //
 // The pending status on GHSC and KESC is a first-class finding, not a detail
 // to route around. Per SEP-1 only "live" means in service, and the monitor
@@ -66,7 +69,7 @@ type CorridorEntry = Entry
 
 // ValidateEntry checks that a registration entry has all required fields.
 // All registered assets require Code, Issuer, Status, VerificationDate, SourceURL,
-// and HomeDomain. Corridor destination tokens also require Peg.
+// and HomeDomain. Corridor destination tokens additionally require Peg.
 func ValidateEntry(e Entry) error {
 	if strings.TrimSpace(e.Code) == "" {
 		return fmt.Errorf("asset code is required")
@@ -86,7 +89,8 @@ func ValidateEntry(e Entry) error {
 	if strings.TrimSpace(e.HomeDomain) == "" {
 		return fmt.Errorf("asset %s: home domain is required", e.Code)
 	}
-	// Corridor destination tokens (non-USDC assets) require Peg.
+	// USDC is the settlement asset senders start from; all other registered assets
+	// are corridor destination tokens whose peg is mandatory.
 	if e.Code != "USDC" {
 		if strings.TrimSpace(e.Peg) == "" {
 			return fmt.Errorf("asset %s: fiat peg is required for corridor tokens", e.Code)
@@ -102,10 +106,10 @@ var registry = []Entry{
 		Code:             "USDC",
 		Issuer:           USDCIssuer,
 		Peg:              "",
-		Status:           "live",
+		Status:           "unverified",
 		VerificationDate: "2026-08-08",
-		SourceURL:        "https://www.circle.com/.well-known/stellar.toml",
-		homeDomain:       "circle.com",
+		SourceURL:        "https://www.circle.com/usdc/.well-known/stellar.toml",
+		HomeDomain:       "circle.com",
 	},
 	{
 		Code:             "NGNC",
@@ -209,25 +213,45 @@ func Registry() []Entry {
 	return out
 }
 
-// FiatPeg returns the ISO-4217 fiat currency code tracked by the given asset,
-// if it is a registered fiat corridor token.
-func FiatPeg(a Asset) (string, bool) {
-	peg, ok := fiatPegs[a.Code+":"+a.Issuer]
-	return peg, ok
-}
-
-// HomeDomain returns the home domain publishing the stellar.toml for the given issuer.
-func HomeDomain(issuer string) (string, bool) {
-	domain, ok := homeDomains[issuer]
-	return domain, ok
-}
-
-// SupportedAssets returns a sorted slice of all asset codes with verified records.
-func SupportedAssets() []string {
-	var codes []string
-	for code := range known {
-		codes = append(codes, code)
+// FiatPegs returns a copy of the mapping from asset code and issuer to fiat currency.
+func FiatPegs() map[string]string {
+	out := make(map[string]string, len(fiatPegs))
+	for k, v := range fiatPegs {
+		out[k] = v
 	}
-	sort.Strings(codes)
-	return codes
+	return out
+}
+
+// HomeDomains returns a copy of the mapping from issuer account to home domain.
+func HomeDomains() map[string]string {
+	out := make(map[string]string, len(homeDomains))
+	for k, v := range homeDomains {
+		out[k] = v
+	}
+	return out
+}
+
+// IsKnown reports whether an asset is explicitly registered.
+func IsKnown(a Asset) bool {
+	if a.Kind != KindStellar {
+		return false
+	}
+	_, ok := entries[a.Code+":"+a.Issuer]
+	return ok
+}
+
+// FiatPeg returns the ISO currency code pegged by a registered asset, if any.
+func FiatPeg(a Asset) bool {
+	_, ok := fiatPegs[a.Code+":"+a.Issuer]
+	return ok
+}
+
+// ListKnown returns a sorted slice of all registered asset codes.
+func ListKnown() []string {
+	out := make([]string, 0, len(known))
+	for code := range known {
+		out = append(out, code)
+	}
+	sort.Strings(out)
+	return out
 }
