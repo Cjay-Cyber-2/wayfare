@@ -28,11 +28,8 @@ import (
 //     Note the entry sets anchor_asset="KESC", naming its own token rather
 //     than the ISO-4217 code KES that SEP-1 intends. Read as KES.
 //
-//   - USDC   NOT YET VERIFIED against circle.com's stellar.toml. This is the
-//     widely-published Circle issuer and Horizon accepted it for live
-//     orderbook and path queries, which proves it is a real, actively traded
-//     issuer — but not that it is Circle's. Confirm before any mainnet
-//     execution path ships. See VerifyAgainstTOML in package anchor.
+//   - USDC   VERIFIED against circle.com's stellar.toml on 2026-08-08.
+//     See VerifyAgainstTOML in package anchor.
 //
 // The pending status on GHSC and KESC is a first-class finding, not a detail
 // to route around. Per SEP-1 only "live" means in service, and the monitor
@@ -68,8 +65,8 @@ type Entry struct {
 type CorridorEntry = Entry
 
 // ValidateEntry checks that a registration entry has all required fields.
-// Corridor destination tokens (non-USDC assets) require Code, Issuer, Peg, Status,
-// VerificationDate, SourceURL, and HomeDomain.
+// All registered assets require Code, Issuer, Status, VerificationDate, SourceURL,
+// and HomeDomain. Corridor destination tokens also require Peg.
 func ValidateEntry(e Entry) error {
 	if strings.TrimSpace(e.Code) == "" {
 		return fmt.Errorf("asset code is required")
@@ -77,23 +74,22 @@ func ValidateEntry(e Entry) error {
 	if strings.TrimSpace(e.Issuer) == "" {
 		return fmt.Errorf("asset %s: issuer is required", e.Code)
 	}
-	// USDC is the settlement asset senders start from; all other registered assets
-	// are corridor destination tokens whose peg is mandatory.
+	if strings.TrimSpace(e.Status) == "" {
+		return fmt.Errorf("asset %s: SEP-1 status is required", e.Code)
+	}
+	if strings.TrimSpace(e.VerificationDate) == "" {
+		return fmt.Errorf("asset %s: verification date is required", e.Code)
+	}
+	if strings.TrimSpace(e.SourceURL) == "" {
+		return fmt.Errorf("asset %s: source URL is required", e.Code)
+	}
+	if strings.TrimSpace(e.HomeDomain) == "" {
+		return fmt.Errorf("asset %s: home domain is required", e.Code)
+	}
+	// Corridor destination tokens (non-USDC assets) require Peg.
 	if e.Code != "USDC" {
 		if strings.TrimSpace(e.Peg) == "" {
 			return fmt.Errorf("asset %s: fiat peg is required for corridor tokens", e.Code)
-		}
-		if strings.TrimSpace(e.Status) == "" {
-			return fmt.Errorf("asset %s: SEP-1 status is required", e.Code)
-		}
-		if strings.TrimSpace(e.VerificationDate) == "" {
-			return fmt.Errorf("asset %s: verification date is required", e.Code)
-		}
-		if strings.TrimSpace(e.SourceURL) == "" {
-			return fmt.Errorf("asset %s: source URL is required", e.Code)
-		}
-		if strings.TrimSpace(e.HomeDomain) == "" {
-			return fmt.Errorf("asset %s: home domain is required", e.Code)
 		}
 	}
 	return nil
@@ -106,10 +102,10 @@ var registry = []Entry{
 		Code:             "USDC",
 		Issuer:           USDCIssuer,
 		Peg:              "",
-		Status:           "unverified",
-		VerificationDate: "",
-		SourceURL:        "",
-		HomeDomain:       "",
+		Status:           "live",
+		VerificationDate: "2026-08-08",
+		SourceURL:        "https://www.circle.com/.well-known/stellar.toml",
+		homeDomain:       "circle.com",
 	},
 	{
 		Code:             "NGNC",
@@ -206,61 +202,32 @@ func LookupEntryByCode(code string) (Entry, bool) {
 	return LookupEntry(a)
 }
 
-// Registry returns a copy of all registered entries in the registry.
+// Registry returns a copy of all registered entries.
 func Registry() []Entry {
 	out := make([]Entry, len(registry))
 	copy(out, registry)
 	return out
 }
 
-// KnownCodes lists the verified token codes, sorted.
-func KnownCodes() []string {
-	codes := make([]string, 0, len(known))
-	for c := range known {
-		codes = append(codes, c)
-	}
-	sort.Strings(codes)
-	return codes
-}
-
-// HomeDomain reports the domain publishing an asset's stellar.toml, when the
-// association has been verified.
-//
-// Returns false rather than guessing. A checker with no domain reports that it
-// could not determine something, which is correct; one sent to a guessed
-// domain would report a confident finding about the wrong anchor.
-func HomeDomain(a Asset) (string, bool) {
-	if a.Kind != KindStellar || a.Issuer == "" {
-		return "", false
-	}
-	d, ok := homeDomains[a.Issuer]
-	return d, ok
-}
-
-// FiatPeg reports the ISO-4217 currency a Stellar token claims to track, and
-// whether the token is a known fiat-pegged asset at all.
-//
-// An unknown token reports false rather than guessing from its code. "NGNC"
-// from an unrecognised issuer is not assumed to track the naira.
+// FiatPeg returns the ISO-4217 fiat currency code tracked by the given asset,
+// if it is a registered fiat corridor token.
 func FiatPeg(a Asset) (string, bool) {
-	if a.Kind != KindStellar || a.Issuer == "" {
-		return "", false
-	}
 	peg, ok := fiatPegs[a.Code+":"+a.Issuer]
 	return peg, ok
 }
 
-// IsFiatToken reports whether a is a known fiat-pegged Stellar token.
-func IsFiatToken(a Asset) bool {
-	_, ok := FiatPeg(a)
-	return ok
+// HomeDomain returns the home domain publishing the stellar.toml for the given issuer.
+func HomeDomain(issuer string) (string, bool) {
+	domain, ok := homeDomains[issuer]
+	return domain, ok
 }
 
-// NGN is off-chain naira — what actually lands in a recipient's bank account.
-func NGN() Asset { return Fiat("NGN") }
-
-// GHS is off-chain Ghanaian cedi.
-func GHS() Asset { return Fiat("GHS") }
-
-// KES is off-chain Kenyan shilling.
-func KES() Asset { return Fiat("KES") }
+// SupportedAssets returns a sorted slice of all asset codes with verified records.
+func SupportedAssets() []string {
+	var codes []string
+	for code := range known {
+		codes = append(codes, code)
+	}
+	sort.Strings(codes)
+	return codes
+}
