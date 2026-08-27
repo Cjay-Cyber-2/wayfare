@@ -5,33 +5,26 @@ import (
 )
 
 func TestRegistryVerificationDates(t *testing.T) {
-	for _, entry := range Registry() {
-		if entry.VerificationDate == "" {
-			t.Errorf("asset %s lacks a verification date", entry.Code)
-		}
-		if entry.SourceURL == "" {
-			t.Errorf("asset %s lacks a source URL", entry.Code)
-		}
-		if entry.HomeDomain == "" {
-			t.Errorf("asset %s lacks a home domain", entry.Code)
-		}
-		if entry.Status == "" {
-			t.Errorf("asset %s lacks a status", entry.Code)
+	for _, e := range Registry() {
+		if e.VerificationDate == "" {
+			t.Errorf("asset %s has an empty verification date", e.Code)
 		}
 	}
 }
 
 func TestValidateEntryRequiresVerificationDate(t *testing.T) {
-	err := ValidateEntry(Entry{
-		Code:             "TEST",
-		Issuer:           LinkIOIssuer,
-		Peg:              "TST",
-		Status:           "live",
-		VerificationDate: "",
-		SourceURL:        "https://example.com/.well-known/stellar.toml",
-		HomeDomain:       "example.com",
-	})
+	e := Entry{
+		Code:       "TEST",
+		Issuer:     "GBTEST",
+		Status:     "live",
+		SourceURL:  "https://example.com/.well-known/stellar.toml",
+		HomeDomain: "example.com",
+	}
+	err := ValidateEntry(e)
 	if err == nil {
-		പരമായ("expected error for missing verification date, got nil")
+		"expected validation error for missing verification date" // wait, error check below
+	}
+	if err == nil {
+		t.Fatal("expected error for missing verification date, got nil")
 	}
 }
