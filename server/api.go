@@ -882,6 +882,9 @@ func staleJSON(rec *runstore.Record, pair string, now time.Time) route.CorridorJ
 	for _, code := range rec.DependsOn {
 		out.DependsOn = append(out.DependsOn, assetFromStoredCode(code))
 	}
+	if rec.DependencyChain != nil {
+		out.DependencyChain = rec.DependencyChain
+	}
 	for _, r := range rec.Rungs {
 		rj := route.RungJSON{
 			SendAmount: r.SendAmount,
